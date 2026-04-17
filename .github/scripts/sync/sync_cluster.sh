@@ -429,18 +429,20 @@ test_checkpoint_cluster_save_on_copy_failure(){
     for i in $(seq 1 500); do
          dd if=/dev/urandom of=/jfs/data/file$i bs=64K count=1 status=none
     done
-    ./random-test runOp -baseDir /jfs/data/random-test/ -files 100000 -ops 1000000 -threads 50 -dirSize 100 -duration 60s -createOp 30,uniform \
+    ./random-test runOp -baseDir /jfs/data/random-test/ -files 100000 -ops 1000000 -threads 50 -dirSize 100 -duration 120s -createOp 30,uniform \
     -deleteOp 5,end --linkOp 10,uniform --symlinkOp 20,uniform --setXattrOp 10,uniform --truncateOp 10,uniform
     (./mc rb myminio/data1 > /dev/null 2>&1 --force || true) && ./mc mb myminio/data1
+    ./mc mb myminio/data1/random-test
     (rm -rf /jfs/data/random-test) &
     deleter_pid=$!
     # Cluster sync should fail on vanished files
     sudo -u juicedata meta_url=$META_URL ./juicefs sync jfs://meta_url/data/ \
-         minio://minioadmin:minioadmin@172.20.0.1:9000/data1/ \
+         minio://minioadmin:minioadmin@172.20.0.1:9000/data1/random-test/ \
          --manager-addr 172.20.0.1:8081 --worker juicedata@172.20.0.2,juicedata@172.20.0.3 \
          --list-threads 10 --list-depth 5 --dirs \
          --enable-checkpoint --checkpoint-interval 2s \
          > sync1.log 2>&1 || true
+
     wait $deleter_pid 2>/dev/null || true
     grep -i "failed to handle\|Failed to copy\|not found\|does not exist" sync1.log || (echo "expected copy failure" && exit 1)
     checkpoint_count=$(./mc find myminio/data1/ --name ".juicefs-sync-checkpoint*" 2>/dev/null | wc -l)
@@ -450,7 +452,7 @@ test_checkpoint_cluster_save_on_copy_failure(){
     fi
     echo "First resumed cluster sync should still fail; second should succeed"
     if sudo -u juicedata meta_url=$META_URL ./juicefs sync jfs://meta_url/data/ \
-       minio://minioadmin:minioadmin@172.20.0.1:9000/data1/ \
+       minio://minioadmin:minioadmin@172.20.0.1:9000/data1/random-test/ \
        --manager-addr 172.20.0.1:8081 --worker juicedata@172.20.0.2,juicedata@172.20.0.3 \
        --list-threads 10 --list-depth 5 --dirs \
        --enable-checkpoint --checkpoint-interval 2s \
@@ -462,7 +464,7 @@ test_checkpoint_cluster_save_on_copy_failure(){
     grep "panic:\|<FATAL>" sync2.log && echo "panic or fatal in sync2.log" && exit 1 || true
 
     sudo -u juicedata meta_url=$META_URL ./juicefs sync jfs://meta_url/data/ \
-       minio://minioadmin:minioadmin@172.20.0.1:9000/data1/ \
+       minio://minioadmin:minioadmin@172.20.0.1:9000/data1/random-test/ \
        --manager-addr 172.20.0.1:8081 --worker juicedata@172.20.0.2,juicedata@172.20.0.3 \
        --list-threads 10 --list-depth 5 --dirs \
        --enable-checkpoint --checkpoint-interval 2s \
